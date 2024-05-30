@@ -2,20 +2,21 @@
 
 import cgi
 import os 
+from matplotlib import pyplot as plt
 import pandas as pd
 
 form = cgi.FieldStorage()
 print("Content-type: text/html; charset=utf-8\n")
 
-# Ignore favicon.ico requests
+# Ne pas gérer l'erreur favicon
 if os.environ.get('REQUEST_URI', '').endswith('favicon.ico'):
     print()
     exit()
 
-# Load the CSV file into a DataFrame
+# Charge le fichier CSV des joueurs
 df = pd.read_csv('player.csv', encoding='utf-8')
 
-# Function to search for players based on various criteria
+# Recherche de joueurs par nom, âge, équipe, salaire ou points
 def search_player():
     playername = form.getvalue("playername")
     playerage = form.getvalue("playerage")
@@ -39,7 +40,7 @@ def search_player():
     return result
 
 def create_player():
-    # Extract player information from the form
+    # Récupère les données du formulaire
     new_player = {
         'Name': form.getvalue("name"),
         'Position': form.getvalue("position"),
@@ -55,13 +56,13 @@ def create_player():
         'Assists': form.getvalue("assists")
     }
 
-    # Create a new DataFrame with the new player information
+    # Crée une nouvelle DF à partir des données (pas de "append" avec pandas)
     df_new = pd.DataFrame([new_player])
 
-    # Concatenate the new DataFrame with the existing DataFrame
+    # Concatène la nouvelle DF avec l'initiale
     df_updated = pd.concat([df, df_new], ignore_index=True)
 
-    # Save the updated DataFrame to the CSV file
+    # Sauvegarde la nouvelle DF dans le fichier CSV
     df_updated.to_csv('player.csv', index=False)
 
     return "Player created successfully!"
@@ -92,10 +93,50 @@ def update_player(player_id):
     df.to_csv('player.csv', index=False)
     return updated_data
 
-# Function to delete a player by index
-def delete_player(player_id):
-    df.drop(int(player_id), inplace=True)
+def delete_player(player_name):
+    df.drop(df[df['Name'] == player_name].index, inplace=True)
     df.to_csv('player.csv', index=False)
+    
+
+    # Function to generate and save plot images
+def generate_plots():
+    # Create plots directory if it doesn't exist
+    plots_dir = 'plots'
+    if not os.path.exists(plots_dir):
+        os.makedirs(plots_dir)
+
+    # Salary vs Age
+    plt.close()
+    plt.figure()
+    df.groupby('Age')['Salary'].mean().plot(kind='bar')
+    plt.title('Average Salary by Age')
+    plt.xlabel('Age')
+    plt.ylabel('Average Salary')
+    plt.savefig('plots/salary_by_age.png')
+    img_salaire_age = os.path.join(plots_dir, 'img_salaire_age.png')
+    plt.savefig(img_salaire_age)
+
+    # Rebounds vs Age
+    plt.close()
+    plt.figure()
+    df.groupby('Age')['Rebounds'].mean().plot(kind='bar')
+    plt.title('Average Rebounds by Age')
+    plt.xlabel('Age')
+    plt.ylabel('Average Rebounds')
+    img_rebonds_age = os.path.join(plots_dir, 'img_rebonds_age.png')
+    plt.savefig(img_rebonds_age)
+
+    # Salary vs Points
+    plt.close()
+    plt.figure()
+    df.plot(kind='scatter', x='Points', y='Salary', color='blue')
+    plt.title('Salary by Points')
+    plt.xlabel('Points')
+    plt.ylabel('Salary')
+    img_salaire_points = os.path.join(plots_dir, 'img_salaire_points.png')
+    plt.savefig(img_salaire_points)
+
+    return [img_salaire_age, img_rebonds_age, img_salaire_points]
 
 # Initialize the result variable
 result = None
@@ -116,18 +157,17 @@ elif action == "update":
 elif action == "delete":
     player_id = form.getvalue("player_id")
     result = delete_player(player_id)
+elif action == "plot":
+    result = generate_plots()
 
-# Debugging print statements to check the result
-print("<pre>")
-print("Action:", action)
-print("Result:", result)
-print("</pre>")
 
 if isinstance(result, pd.DataFrame) and not result.empty:
     result_html = result.to_html(index=False)
 elif result is not None:
     if isinstance(result, dict):
         result_html = "<p>" + "</p><p>".join([f"{key}: {value}" for key, value in result.items()]) + "</p>"
+    elif isinstance(result, list):
+        result_html = "".join([f'<img src="{img}" alt="Plot" />' for img in result])
     else:
         result_html = f"<p>{result}</p>"
 else:
@@ -192,6 +232,7 @@ html = f"""<!DOCTYPE html>
   <button class="tablinks" onclick="openTab(event, 'Retrieve')">Retrieve</button>
   <button class="tablinks" onclick="openTab(event, 'Update')">Update</button>
   <button class="tablinks" onclick="openTab(event, 'Delete')">Delete</button>
+  <button class="tablinks" onclick="openTab(event, 'Plot')">Plot</button>
 </div>
 
 <div id="Search" class="tabcontent">
@@ -290,6 +331,13 @@ html = f"""<!DOCTYPE html>
       <label for="player_id">Player ID</label><br>
       <input type="text" name="player_id" /><br>
       <input type="submit" value="Delete Player">
+  </form>
+</div>
+
+<div id="Plot" class="tabcontent">
+  <form action="/index.py" method="post">
+      <input type="hidden" name="action" value="plot">
+      <input type="submit" value="Generate Plots">
   </form>
 </div>
 
